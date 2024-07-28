@@ -1,0 +1,6 @@
+numpy==1.26.4
+paho-mqtt==2.1.0
+pandas==2.2.2
+pydantic==2.8.2
+transitions==0.9.1
+typing_extensions==4.12.2
