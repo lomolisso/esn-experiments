@@ -1,7 +1,6 @@
 import time
 import enum
 from pydantic import BaseModel
-from config import DEVICE_NAME
 from virtual_device import EdgeSensor
 
 MICROSECOND_CONVERSION_FACTOR = 1000000 # 1 second = 1,000,000 microseconds
@@ -86,7 +85,7 @@ class GetSensorState(SensorStateCommand):
     resource_value: SensorState = None
 
     def handle(self, device: EdgeSensor, uuid: str):
-        topic = f"response/{DEVICE_NAME}/{self.resource_name}/get/{uuid}"
+        topic = f"response/{device.name}/{self.resource_name}/get/{uuid}"
         return Response(topic=topic, payload={"sensor-state": device.get_state()})
 
 
@@ -117,7 +116,7 @@ class GetInferenceLayer(InferenceLayerCommand):
     resource_value: InferenceLayer = None
 
     def handle(self, device: EdgeSensor, uuid: str):
-        topic = f"response/{DEVICE_NAME}/{self.resource_name}/get/{uuid}"
+        topic = f"response/{device.name}/{self.resource_name}/get/{uuid}"
         return Response(topic=topic, payload={"inference-layer": device.get_inference_layer()})
 
 
@@ -145,7 +144,7 @@ class GetSensorConfig(SensorConfigCommand):
     resource_value: SensorConfig = None
 
     def handle(self, device: EdgeSensor, uuid: str):
-        topic = f"response/{DEVICE_NAME}/{self.resource_name}/get/{uuid}"
+        topic = f"response/{device.name}/{self.resource_name}/get/{uuid}"
         return Response(topic=topic, payload={"sensor-config": {"sleep_interval_ms": device.get_sleep_interval_ms()}})
 
 

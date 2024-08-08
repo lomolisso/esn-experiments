@@ -4,7 +4,7 @@ from dataset import MeasurementHandler
 from config import (
     FALLBACK_INFERENCE_LAYER,
     ADAPTIVE_INFERENCE,
-    MAX_PREDICTION_HISTORY_LENGTH,
+    PREDICTION_HISTORY_LENGTH,
     ABNORMAL_LABELS,
     ABNORMAL_PREDICTION_THRESHOLD,
     DEVICE_BATTERY_LIFETIME_IN_CYCLES,
@@ -24,30 +24,13 @@ class EdgeSensorConfig:
         self.sleep_interval_ms = sleep_interval_ms + random.randint(
             0, int(sleep_interval_ms / 2)
         )
-
-# --- Utility functions ---
-def sensor_adapt_heuristic(low_battery, prediction_history):
-    """
-    This method computes is only called when ADAPTIVE_INFERENCE is set to True.
-    """
-
-    if low_battery:
-        return GATEWAY_INFERENCE_LAYER
-    else:
-        if len(prediction_history) < MAX_PREDICTION_HISTORY_LENGTH:
-            return SENSOR_INFERENCE_LAYER
-        else:
-            if sum(prediction_history) >= ABNORMAL_PREDICTION_THRESHOLD:
-                return GATEWAY_INFERENCE_LAYER
-            else:
-                return SENSOR_INFERENCE_LAYER
-
-
+        
 class EdgeSensor:
     # thread-safe variables
     _sleeping = False
     _cycle_counter = 0
-    _prediction_history = deque(maxlen=MAX_PREDICTION_HISTORY_LENGTH)
+    _pred_state_counter = 0
+    _prediction_history = deque(maxlen=PREDICTION_HISTORY_LENGTH)
     _mh = MeasurementHandler()
 
     # critical section variables
@@ -66,6 +49,64 @@ class EdgeSensor:
     _config_mutex = threading.Lock()
     _config = EdgeSensorConfig(sleep_interval_ms=10000)
 
+    # --- Sensor Adaptive Inference Heuristic ---
+    def sensor_adaptive_inference_heuristic(self):
+        """
+        Sensor Adaptive Inference Heuristic
+
+        M_t: prediction history at time step t
+        sigma(M_t): number of abnormal predictions in history at time step t
+        psi_s: threshold for abnormal predictions, if greater than psi_s, set inference layer to gateway
+        """
+
+        u_t = self._pred_state_counter
+        assert u_t >= len(self._prediction_history)
+        m = PREDICTION_HISTORY_LENGTH
+        sigma_M_t = sum(self._prediction_history)
+        low_battery = self.is_device_low_battery()
+        psi_s = ABNORMAL_PREDICTION_THRESHOLD
+
+        if low_battery: # b_t < psi_b
+            return GATEWAY_INFERENCE_LAYER
+        else: # b_t >= psi_b
+            if u_t < m: # history not full => sensor
+                return SENSOR_INFERENCE_LAYER
+            else: # u_t >= m
+                if sigma_M_t >= psi_s: # abnormal predictions => gateway
+                    return GATEWAY_INFERENCE_LAYER
+                else: # normal predictions => sensor
+                    return SENSOR_INFERENCE_LAYER
+    
+    # --- prediction state counter ---
+    def _get_pred_state_counter(self):
+        return self._pred_state_counter
+    
+    def _set_pred_state_counter(self, value):
+        self._pred_state_counter = value
+
+    def update_pred_state_counter(self):
+        self._set_pred_state_counter(self._get_pred_state_counter() + 1)
+    
+    def clear_pred_state_counter(self):
+        self._set_pred_state_counter(0)
+
+
+    # --- prediction history ---
+    def _get_prediction_history(self):
+        return self._prediction_history
+    
+    def _set_prediction_history(self, value):
+        self._prediction_history = value
+    
+    def update_prediction_history(self, prediction):
+        is_abnormal = 1 if prediction in ABNORMAL_LABELS else 0
+        _pred_history = self._get_prediction_history()
+        _pred_history.append(is_abnormal)
+        self._set_prediction_history(_pred_history)
+
+    def clear_prediction_history(self):
+        self._set_prediction_history(deque(maxlen=PREDICTION_HISTORY_LENGTH))
+
     # --- Constructor ---
     def __init__(self, name):
         self.name = name
@@ -82,9 +123,9 @@ class EdgeSensor:
             # perform inference
             output_label = self._model_manager.predict(input_data)
 
-            # update prediction history
-            is_abnormal = 1 if output_label in ABNORMAL_LABELS else 0
-            self._prediction_history.append(is_abnormal)
+            # update prediction history and state counter
+            self.update_prediction_history(output_label)
+            self.update_pred_state_counter()
 
             return output_label
 
@@ -102,14 +143,14 @@ class EdgeSensor:
             # by the user or the heuristic of an upper network layer: gateway or cloud
 
             if self._inference_layer == SENSOR_INFERENCE_LAYER:
-                heuristic_result = sensor_adapt_heuristic(
-                    low_battery, prediction_history
-                )
+                heuristic_result = self.sensor_adaptive_inference_heuristic()
                 if heuristic_result != SENSOR_INFERENCE_LAYER:
-                    layers = ["SENSOR_INFERENCE_LAYER", "GATEWAY_INFERENCE_LAYER"]
-                    self._prediction_history.clear()
-                    print(f"Adapting inference layer to {layers[heuristic_result]}")
+                    self.clear_prediction_history()
+                    self.clear_pred_state_counter()
                     self._inference_layer = heuristic_result
+
+                    layers = ["SENSOR_INFERENCE_LAYER", "GATEWAY_INFERENCE_LAYER"]
+                    print(f"Adapting inference layer to {layers[heuristic_result]}")
             
             return self._inference_layer
 

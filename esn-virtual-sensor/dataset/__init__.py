@@ -64,34 +64,48 @@ class MeasurementHandler:
         for label, data in dataframes.items():
             dataframes[label] = data.iloc[:len(data) - len(data) % SEQ_LENGTH]
 
-        sequences = []
-        labels = []
+        sequences = {}
         # Create sequences and labels
-        for label, data in dataframes.items():
+        for l, data in dataframes.items():
+            sequences[l] = []
             for i in range(0, len(data), SEQ_LENGTH):
                 seq = data.iloc[i:i + SEQ_LENGTH]
-                sequences.append(seq[['acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z']].values)
-                labels.append(label)
+                sequences[l].append(seq[['acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z']].values)
         
-        self.sequences, self.labels = np.array(sequences), np.array(labels)
+        self.sequences = sequences
 
-        # shuffle sequences and labels the same way
-        _zip_sequences_labels = list(zip(self.sequences, self.labels))
-        np.random.shuffle(_zip_sequences_labels)
-        _sequences, _labels = zip(*_zip_sequences_labels)
-
-        self.sequences, self.labels = np.array(_sequences), np.array(_labels)
+    def _consume_sequence(self, label):
+        seq = self.sequences[label][self.counter[label]]
+        self.counter[label] = (self.counter[label] + 1) % len(self.sequences[label])
+        print(f"Consumed sequence with label {label}")
+        return label, seq
 
     def __init__(self) -> None:
-        self.counter = 0
         self._init_sequences_and_labels()
+        self.counter = [0, 0, 0, 0]
+
+        # experiment
+        self._exp_seq_counter = 0
+        self._exp_seq = [
+            {"label": 0, "quantity": 24},   # sensor
+            {"label": 3, "quantity": 10},   # sensor
+            {"label": 0, "quantity": 24},   # gateway
+            {"label": 0, "quantity": 24},   # sensor
+            {"label": 3, "quantity": 10},   # sensor
+            {"label": 3, "quantity": 16},   # gateway
+            {"label": 0, "quantity": 24},   # cloud
+            {"label": 0, "quantity": 16},   # gateway
+            {"label": 0, "quantity": 32},   # sensor
+        ]
 
     def sequence(self):
-        if self.counter >= len(self.sequences):
-            self.counter = 0
-
-        seq = self.sequences[self.counter]
-        label = self.labels[self.counter]
-        self.counter += 1
-
-        return label, seq
+        # first we check where we are in the experiment
+        exp = self._exp_seq[self._exp_seq_counter]
+        print(exp)
+        if exp["quantity"] != 0:
+            exp["quantity"] -= 1
+            return self._consume_sequence(exp["label"])
+        else:
+            self._exp_seq_counter = (self._exp_seq_counter + 1) % len(self._exp_seq)
+            return self.sequence()
+        

@@ -45,6 +45,39 @@ class TFModelManager:
         print(f"Model loaded successfully. Input shape: {self._input_details[0]['shape']}, Output shape: {self._output_details[0]['shape']}")
 
 
+    def update_model(self, tf_model_b64, tf_model_bytesize):
+        """
+        Update the model with a new model.
+        """
+        # Import modules if not already imported
+        if self._tf is None:
+            import tensorflow as tf
+            self._tf = tf
+        if self._np is None:
+            import numpy 
+            self._np = numpy
+
+        # Decode b64 encoded model into bytes
+        _decoded_model = base64.b64decode(tf_model_b64)
+
+        # Decompress the gzip model
+        _decoded_model = gzip.decompress(_decoded_model)
+
+        # Check if the model size matches the expected size
+        if len(_decoded_model) != tf_model_bytesize:
+            raise ValueError(
+                f"Model size mismatch: expected {tf_model_bytesize} bytes, got {len(_decoded_model)} bytes"
+            )
+
+        # Load the model
+        self._model = self._tf.lite.Interpreter(model_content=_decoded_model)
+        self._model.allocate_tensors()
+
+        # Get input and output tensors.
+        self._input_details = self._model.get_input_details()
+        self._output_details = self._model.get_output_details()
+
+
     def predict(self, input_data):
         """
         Performs inference using the current model loaded in the manager.

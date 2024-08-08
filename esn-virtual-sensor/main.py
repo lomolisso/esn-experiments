@@ -1,9 +1,10 @@
 import time
+import sys
 import json
 from virtual_device import EdgeSensor
 from mqtt_client import MQTTClient
 from mqtt_client.export import SensorDataExport, InferenceDescriptor, SensorReading
-from config import MQTT_BROKER_HOST, MQTT_BROKER_PORT, DEVICE_NAME, SENSOR_INFERENCE_LAYER
+from config import MQTT_BROKER_HOST, MQTT_BROKER_PORT, SENSOR_INFERENCE_LAYER
 
 SLEEP_INTERVAL_MS = 30000 # 30 seconds
 MICROSECOND_CONVERSION_FACTOR = 1000000 # 1 second = 1,000,000 microseconds
@@ -33,16 +34,17 @@ def device_mqtt_payload(device, measurement, inference_descriptor):
 
 def device_deep_sleep(mqtt_client):
     device: EdgeSensor = mqtt_client.device
-    device.set_sleeping(True)
-    mqtt_client.loop_stop()  # Stop the network loop
-    mqtt_client.disconnect()  # Disconnect from the broker
+    #mqtt_client.loop_stop()  # Stop the network loop
+    #mqtt_client.disconnect()  # Disconnect from the broker
     sleep_time = device.get_sleep_interval_ms()
-    print(f"Entering deep sleep... [{sleep_time} ms]")
-    print(f"Cycle {device.get_cycle_counter()} completed.")
-    
-    time.sleep(sleep_time / 1000)  # Simulate deep sleep duration
-    device.set_sleeping(False)
-    print("Waking up from deep sleep...")
+    if sleep_time != 0:
+        device.set_sleeping(True)
+        print(f"Entering deep sleep... [{sleep_time} ms]")
+        print(f"Cycle {device.get_cycle_counter()} completed.")
+        
+        time.sleep(sleep_time / 1000)  # Simulate deep sleep duration
+        device.set_sleeping(False)
+        print("Waking up from deep sleep...")
     device.update_cycle_counter()
     print(f"Starting cycle {device.get_cycle_counter()}...")
     mqtt_client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT)  # Reconnect to the broker
@@ -50,7 +52,7 @@ def device_deep_sleep(mqtt_client):
 
 
 if __name__ == "__main__":
-    device = EdgeSensor(DEVICE_NAME)
+    device = EdgeSensor(name=sys.argv[1])
     mqtt_client = MQTTClient(device=device)
     mqtt_client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT)
     mqtt_client.loop_start()
@@ -79,7 +81,7 @@ if __name__ == "__main__":
                             send_timestamp=int(time.time() * MICROSECOND_CONVERSION_FACTOR),
                         )
                     
-                    topic = f"export/{DEVICE_NAME}/sensor-data"
+                    topic = f"export/{device.name}/sensor-data"
                     payload = device_mqtt_payload(device, measurement, inference_descriptor)
                     print("Publishing sensor data to broker...")
                     mqtt_client.publish(topic, payload, qos=0)
@@ -90,8 +92,8 @@ if __name__ == "__main__":
             device_deep_sleep(mqtt_client)
 
     except KeyboardInterrupt:
-        print("Exiting simulation...")
-    finally:
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
+        print("Exiting simulation...")
+        sys.exit(0)
 
