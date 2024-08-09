@@ -7,6 +7,14 @@ import signal
 import time
 
 def generate_device_names(n):
+    # case 1: devices.json exists
+    if os.path.exists("devices.json"):
+        with open("devices.json", "r") as f:
+            device_names = json.load(f)
+            if len(device_names) >= n:
+                return device_names[:n]
+
+    # case 2: devices.json does not exist or does not contain enough device names
     device_names = []
     while len(device_names) < n:
         candidate = "ESP32_" + ''.join(random.choices("0123456789ABCDEF", k=6))
