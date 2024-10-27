@@ -64,23 +64,36 @@ def pad_data_centered(time1, values1, time2, values2):
 
 # File combinations for the plots, adjusted to exclude zero data files
 file_combinations = [
-    (25, 'gateway', None, 'cloud'),  # None indicates no data for 'cloud'
-    (20, 'gateway', 5, 'cloud'),
-    (15, 'gateway', 10, 'cloud'),
-    (10, 'gateway', 15, 'cloud'),
-    (5, 'gateway', 20, 'cloud'),
-    (None, 'gateway', 25, 'cloud')  # None indicates no data for 'gateway'
+    (25, 'gateway', None, 'cloud'),  # n_g=25, n_c=0
+    (20, 'gateway', 5, 'cloud'),     # n_g=20, n_c=5
+    (15, 'gateway', 10, 'cloud'),    # n_g=15, n_c=10
+    (10, 'gateway', 15, 'cloud'),    # n_g=10, n_c=15
+    (5, 'gateway', 20, 'cloud'),     # n_g=5, n_c=20
+    (None, 'gateway', 25, 'cloud')   # n_g=0, n_c=25
 ]
 
 # Create a figure with subplots
-fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=True)  # Changed to 2 rows, 3 columns
+fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=False)  # Changed sharey to False
 
-# Define colors with transparency
-cloud_color = plt.cm.tab10.colors[0]
-gateway_color = plt.cm.tab10.colors[1]
-
+# Get tab colors from matplotlib
+tab_colors = plt.cm.tab10.colors
+num_plots = len(file_combinations)
+if num_plots > len(tab_colors):
+    # If more plots than available tab colors, extend the color list
+    tab_colors = tab_colors * ((num_plots // len(tab_colors)) + 1)
+    
 # Flatten axes array for easier iteration
 axes = axes.flatten()
+
+# Prepare legend labels
+legend_labels = []
+for gateway_num, _, cloud_num, _ in file_combinations:
+    n_g = gateway_num if gateway_num is not None else 0
+    n_c = cloud_num if cloud_num is not None else 0
+    legend_labels.append(f"$n_{{g}}={n_g}, \, n_{{c}}={n_c}$")
+
+# Initialize list to keep track of plot colors for the legend
+plot_colors = []
 
 # Loop through each file combination and plot
 for i, (gateway_num, gateway_source, cloud_num, cloud_source) in enumerate(file_combinations):
@@ -102,50 +115,59 @@ for i, (gateway_num, gateway_source, cloud_num, cloud_source) in enumerate(file_
         time_cloud, throughput_cloud, time_gateway, throughput_gateway
     )
 
-    # Plot the stacked histograms with stepfilled style
+    # Sum the throughput values
+    total_throughput = padded_throughput_cloud + padded_throughput_gateway
+
+    # Choose a color for this subplot
+    plot_color = tab_colors[i]
+    plot_colors.append(plot_color)
+
+    # Plot the single histogram
     axes[i].hist(
-        [unified_time, unified_time], bins=len(unified_time), 
-        weights=[padded_throughput_cloud, padded_throughput_gateway],
-        label=['Cloud-based Inference', 'Gateway-based Inference'], 
-        color=[cloud_color, gateway_color], stacked=True, 
-        edgecolor='black', alpha=0.75, histtype='stepfilled', zorder=3
+        unified_time, bins=len(unified_time), 
+        weights=total_throughput,
+        color=plot_color, edgecolor='black', alpha=0.75, histtype='stepfilled', zorder=3
     )
     
-    # Overlay with ustep style
+    # Overlay with step style for better edge visibility
     axes[i].hist(
-        [unified_time, unified_time], bins=len(unified_time), 
-        weights=[padded_throughput_cloud, padded_throughput_gateway],
-        color=['black', "black"], stacked=True, histtype='step', linewidth=1.5, zorder=4
+        unified_time, bins=len(unified_time), 
+        weights=total_throughput,
+        color='black', histtype='step', linewidth=1.5, zorder=4
     )
 
     # Annotate the areas with text inside a box
-    area_cloud = np.sum(padded_throughput_cloud)
-    area_gateway = np.sum(padded_throughput_gateway)
-    total_area = area_cloud + area_gateway
+    D_c = np.sum(padded_throughput_cloud)
+    D_g = np.sum(padded_throughput_gateway)
+    D_total = D_c + D_g
 
     # Adding a bounding box to the text
     bbox_props = dict(edgecolor='black', facecolor='white')
-    
+
     # Annotate the areas with text inside a box
-    axes[i].text(0.95, 0.95, f'Cloud: ~{area_cloud:.2f} Kb\nGateway: ~{area_gateway:.2f} Kb\nTotal: ~{total_area:.2f} Kb', 
+    axes[i].text(0.95, 0.95, f'$D_{{c}} = {D_c:.2f}$ Kb\n$D_{{g}} = {D_g:.2f}$ Kb\n$D_{{total}} = {D_total:.2f}$ Kb', 
         transform=axes[i].transAxes, fontsize=10, verticalalignment='top', horizontalalignment='right', bbox=bbox_props)
 
-    axes[i].set_yticks(np.arange(0, max(axes[i].get_ylim()), 100))
-
     # Set axis labels and grid
-    axes[i].set_xlabel('Time (seconds)')
+    if i >= 3:
+        axes[i].set_xlabel('Time (seconds)')
     axes[i].grid(axis='y')
-    if i % 3 == 0:  # Set y-label for the first column only
+    
+    # Set y-label for the first column only
+    if i % 3 == 0:  
         axes[i].set_ylabel('Throughput (Kbps)')
+    
+    # Adjust y-axis limits to add padding
+    y_max = axes[i].get_ylim()[1]
+    axes[i].set_ylim(0, y_max * 1.3)  # Add 10% padding on top
 
-# Add a legend with black border and color patch borders
-legend_patches = [
-    Patch(facecolor=cloud_color, edgecolor='black', label='Cloud-based Inference', linewidth=1.5, alpha=0.75),
-    Patch(facecolor=gateway_color, edgecolor='black', label='Gateway-based Inference', linewidth=1.5, alpha=0.75)
-]
-fig.legend(handles=legend_patches, loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=2, edgecolor='black')
+# Add a legend with patches corresponding to each subplot
+legend_patches = [Patch(facecolor=plot_colors[i], alpha=0.75, edgecolor='black', label=legend_labels[i]) for i in range(num_plots)]
+fig.legend(handles=legend_patches, loc='lower center', bbox_to_anchor=(0.5, 0.02), ncol=6)  # Changed ncol to 6 for a single row
+
+# Adjust layout to make room for the legend
+plt.tight_layout(rect=[0, 0.05, 1, 1])  # Adjusted rect to provide more space for the legend
 
 # Save the combined figure
-plt.tight_layout()
-plt.savefig('throughput_over_time_stacked_histograms.png')
+plt.savefig('throughput_over_time_sum_histograms.png')
 plt.show()

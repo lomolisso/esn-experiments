@@ -1,5 +1,6 @@
 *.tflite
 devices.json
+*.Identifier
 
 
 # Byte-compiled / optimized / DLL files
